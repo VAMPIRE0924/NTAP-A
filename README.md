@@ -16,3 +16,4 @@ generated release archives. Final release packages belong in GitHub Releases.
     src/common/  shared protocol and helpers
     src/a/  component source
     conf/        minimal example config
+
