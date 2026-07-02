@@ -1,0 +1,13 @@
+[server]
+tap_addr=0.0.0.0:8024
+socks_addr=0.0.0.0:1080
+api_addr=0.0.0.0:8080
+db_file=./ntap.db
+
+[auth]
+api_key=change-me
+
+[log]
+level=info
+file=./ntap-a.log
+
