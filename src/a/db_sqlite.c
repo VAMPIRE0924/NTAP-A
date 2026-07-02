@@ -503,6 +503,8 @@ int ntap_a_db_init(const char *db_file, char *err, size_t err_len)
                               "INTEGER NOT NULL DEFAULT 0", err, err_len) != 0 ||
         add_column_if_missing(db, "networks", "allow_l2_control",
                               "INTEGER NOT NULL DEFAULT 0", err, err_len) != 0 ||
+        add_column_if_missing(db, "nodes", "direct_port",
+                              "INTEGER NOT NULL DEFAULT 0", err, err_len) != 0 ||
         add_column_if_missing(db, "nodes", "max_socks_streams",
                               "INTEGER NOT NULL DEFAULT 64", err, err_len) != 0 ||
         add_column_if_missing(db, "nodes", "socks_idle_timeout_sec",
@@ -593,6 +595,7 @@ int ntap_a_db_add_network(const char *db_file, const char *name,
 int ntap_a_db_add_node(const char *db_file, const char *name, const char *node_id,
                        const char *node_key, int64_t network_id,
                        const char *tap_name, const char *bridge_name, uint16_t mtu,
+                       uint16_t direct_port,
                        uint32_t max_socks_streams,
                        uint32_t socks_idle_timeout_sec,
                        char *err, size_t err_len)
@@ -635,9 +638,10 @@ int ntap_a_db_add_node(const char *db_file, const char *name, const char *node_i
     rc = sqlite3_prepare_v2(db,
                             "INSERT INTO nodes("
                             "node_id, name, node_key_secret, node_key_hash, network_id,"
-                            "tap_name, bridge_name, mtu, max_socks_streams,"
-                            "socks_idle_timeout_sec, created_at, updated_at)"
-                            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                            "tap_name, bridge_name, mtu, direct_port,"
+                            "max_socks_streams, socks_idle_timeout_sec,"
+                            "created_at, updated_at)"
+                            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
                             -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         db_set_err(err, err_len, "prepare node insert failed", db);
@@ -652,10 +656,11 @@ int ntap_a_db_add_node(const char *db_file, const char *name, const char *node_i
     (void)sqlite3_bind_text(stmt, 6, stored_tap_name, -1, SQLITE_TRANSIENT);
     (void)sqlite3_bind_text(stmt, 7, stored_bridge_name, -1, SQLITE_TRANSIENT);
     (void)sqlite3_bind_int(stmt, 8, mtu);
-    (void)sqlite3_bind_int(stmt, 9, (int)max_socks_streams);
-    (void)sqlite3_bind_int(stmt, 10, (int)socks_idle_timeout_sec);
-    (void)sqlite3_bind_int64(stmt, 11, (sqlite3_int64)now);
+    (void)sqlite3_bind_int(stmt, 9, (int)direct_port);
+    (void)sqlite3_bind_int(stmt, 10, (int)max_socks_streams);
+    (void)sqlite3_bind_int(stmt, 11, (int)socks_idle_timeout_sec);
     (void)sqlite3_bind_int64(stmt, 12, (sqlite3_int64)now);
+    (void)sqlite3_bind_int64(stmt, 13, (sqlite3_int64)now);
 
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
@@ -930,6 +935,7 @@ int ntap_a_db_edit_node(const char *db_file, int64_t id, const char *name,
                         const char *node_id, const char *node_key,
                         int64_t network_id, const char *tap_name,
                         const char *bridge_name, uint16_t mtu,
+                        uint16_t direct_port,
                         uint32_t max_socks_streams,
                         uint32_t socks_idle_timeout_sec,
                         char *err, size_t err_len)
@@ -979,11 +985,12 @@ int ntap_a_db_edit_node(const char *db_file, int64_t id, const char *name,
         update_key ?
         "UPDATE nodes SET node_id = ?, name = ?, node_key_secret = ?,"
         " node_key_hash = ?, network_id = ?, tap_name = ?, bridge_name = ?,"
-        " mtu = ?, max_socks_streams = ?, socks_idle_timeout_sec = ?,"
-        " updated_at = ? WHERE id = ?;" :
+        " mtu = ?, direct_port = ?, max_socks_streams = ?,"
+        " socks_idle_timeout_sec = ?, updated_at = ? WHERE id = ?;" :
         "UPDATE nodes SET node_id = ?, name = ?, network_id = ?,"
-        " tap_name = ?, bridge_name = ?, mtu = ?, max_socks_streams = ?,"
-        " socks_idle_timeout_sec = ?, updated_at = ? WHERE id = ?;",
+        " tap_name = ?, bridge_name = ?, mtu = ?, direct_port = ?,"
+        " max_socks_streams = ?, socks_idle_timeout_sec = ?,"
+        " updated_at = ? WHERE id = ?;",
         -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         db_set_err(err, err_len, "prepare node edit failed", db);
@@ -999,19 +1006,21 @@ int ntap_a_db_edit_node(const char *db_file, int64_t id, const char *name,
         (void)sqlite3_bind_text(stmt, 6, stored_tap_name, -1, SQLITE_TRANSIENT);
         (void)sqlite3_bind_text(stmt, 7, stored_bridge_name, -1, SQLITE_TRANSIENT);
         (void)sqlite3_bind_int(stmt, 8, mtu);
-        (void)sqlite3_bind_int(stmt, 9, (int)max_socks_streams);
-        (void)sqlite3_bind_int(stmt, 10, (int)socks_idle_timeout_sec);
-        (void)sqlite3_bind_int64(stmt, 11, (sqlite3_int64)now);
-        (void)sqlite3_bind_int64(stmt, 12, (sqlite3_int64)id);
+        (void)sqlite3_bind_int(stmt, 9, (int)direct_port);
+        (void)sqlite3_bind_int(stmt, 10, (int)max_socks_streams);
+        (void)sqlite3_bind_int(stmt, 11, (int)socks_idle_timeout_sec);
+        (void)sqlite3_bind_int64(stmt, 12, (sqlite3_int64)now);
+        (void)sqlite3_bind_int64(stmt, 13, (sqlite3_int64)id);
     } else {
         (void)sqlite3_bind_int64(stmt, 3, (sqlite3_int64)network_id);
         (void)sqlite3_bind_text(stmt, 4, stored_tap_name, -1, SQLITE_TRANSIENT);
         (void)sqlite3_bind_text(stmt, 5, stored_bridge_name, -1, SQLITE_TRANSIENT);
         (void)sqlite3_bind_int(stmt, 6, mtu);
-        (void)sqlite3_bind_int(stmt, 7, (int)max_socks_streams);
-        (void)sqlite3_bind_int(stmt, 8, (int)socks_idle_timeout_sec);
-        (void)sqlite3_bind_int64(stmt, 9, (sqlite3_int64)now);
-        (void)sqlite3_bind_int64(stmt, 10, (sqlite3_int64)id);
+        (void)sqlite3_bind_int(stmt, 7, (int)direct_port);
+        (void)sqlite3_bind_int(stmt, 8, (int)max_socks_streams);
+        (void)sqlite3_bind_int(stmt, 9, (int)socks_idle_timeout_sec);
+        (void)sqlite3_bind_int64(stmt, 10, (sqlite3_int64)now);
+        (void)sqlite3_bind_int64(stmt, 11, (sqlite3_int64)id);
     }
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
@@ -2341,7 +2350,8 @@ static int json_append_node_row(json_buf_t *json, sqlite3_stmt *stmt)
            json_append(json, ",\"bridge_name\":") != 0 ||
            json_append_string(json, sqlite3_column_text(stmt, 9)) != 0 ||
            json_appendf(json,
-                        ",\"mtu\":%d,\"max_socks_streams\":%d,"
+                        ",\"mtu\":%d,\"direct_port\":%d,"
+                        "\"max_socks_streams\":%d,"
                         "\"socks_idle_timeout_sec\":%d,"
                         "\"online\":%d,\"last_seen\":%lld,"
                         "\"created_at\":%lld,\"updated_at\":%lld}",
@@ -2349,9 +2359,10 @@ static int json_append_node_row(json_buf_t *json, sqlite3_stmt *stmt)
                         sqlite3_column_int(stmt, 11),
                         sqlite3_column_int(stmt, 12),
                         sqlite3_column_int(stmt, 13),
-                        (long long)sqlite3_column_int64(stmt, 14),
+                        sqlite3_column_int(stmt, 14),
                         (long long)sqlite3_column_int64(stmt, 15),
-                        (long long)sqlite3_column_int64(stmt, 16)) != 0 ? -1 : 0;
+                        (long long)sqlite3_column_int64(stmt, 16),
+                        (long long)sqlite3_column_int64(stmt, 17)) != 0 ? -1 : 0;
 }
 
 static int json_append_tap_user_row(json_buf_t *json, sqlite3_stmt *stmt)
@@ -2629,9 +2640,9 @@ int ntap_a_db_json_nodes(const char *db_file, char **out_json,
     rc = sqlite3_prepare_v2(db,
                             "SELECT id, node_id, name, network_id, enabled,"
                             " tap_enabled, socks_enabled, direct_enabled,"
-                            " tap_name, bridge_name, mtu, max_socks_streams,"
-                            " socks_idle_timeout_sec, online, last_seen,"
-                            " created_at, updated_at"
+                            " tap_name, bridge_name, mtu, direct_port,"
+                            " max_socks_streams, socks_idle_timeout_sec,"
+                            " online, last_seen, created_at, updated_at"
                             " FROM nodes ORDER BY id;",
                             -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
@@ -2682,9 +2693,9 @@ int ntap_a_db_json_node(const char *db_file, int64_t id, char **out_json,
         db_file, id,
         "SELECT id, node_id, name, network_id, enabled,"
         " tap_enabled, socks_enabled, direct_enabled,"
-        " tap_name, bridge_name, mtu, max_socks_streams,"
-        " socks_idle_timeout_sec, online, last_seen,"
-        " created_at, updated_at"
+        " tap_name, bridge_name, mtu, direct_port,"
+        " max_socks_streams, socks_idle_timeout_sec,"
+        " online, last_seen, created_at, updated_at"
         " FROM nodes WHERE id = ?;",
         "prepare node get failed", "node not found",
         json_append_node_row, out_json, err, err_len);

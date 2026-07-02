@@ -666,6 +666,7 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         char bridge_name[NTAP_CONFIG_VALUE_MAX];
         int64_t network_id = 0;
         int64_t mtu = NTAP_DEFAULT_MTU;
+        uint32_t direct_port = 0;
         uint32_t max_socks_streams = NTAP_A_DEFAULT_MAX_SOCKS_STREAMS;
         uint32_t socks_idle_timeout_sec = NTAP_A_DEFAULT_SOCKS_IDLE_TIMEOUT_SEC;
 
@@ -696,7 +697,10 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
                          sizeof(bridge_name)) != 0) {
             bridge_name[0] = '\0';
         }
-        if (api_parse_optional_u32(req, "max_socks_streams",
+        if (api_parse_optional_u32(req, "direct_port", 0,
+                                   &direct_port) != 0 ||
+            direct_port > 65535u ||
+            api_parse_optional_u32(req, "max_socks_streams",
                                    max_socks_streams,
                                    &max_socks_streams) != 0 ||
             api_parse_optional_u32(req, "socks_idle_timeout_sec",
@@ -708,7 +712,8 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         }
         if (ntap_a_db_add_node(cfg->db_file, name, node_id, node_key,
                                network_id, tap_name, bridge_name,
-                               (uint16_t)mtu, max_socks_streams,
+                               (uint16_t)mtu, (uint16_t)direct_port,
+                               max_socks_streams,
                                socks_idle_timeout_sec, err, err_len) != 0) {
             return -1;
         }
@@ -825,6 +830,7 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         int64_t id = 0;
         int64_t network_id = 0;
         uint32_t mtu = 0;
+        uint32_t direct_port = 0;
         uint32_t max_socks_streams = NTAP_A_DEFAULT_MAX_SOCKS_STREAMS;
         uint32_t socks_idle_timeout_sec = NTAP_A_DEFAULT_SOCKS_IDLE_TIMEOUT_SEC;
 
@@ -851,7 +857,10 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
                          sizeof(bridge_name)) != 0) {
             bridge_name[0] = '\0';
         }
-        if (api_parse_optional_u32(req, "max_socks_streams",
+        if (api_parse_optional_u32(req, "direct_port", 0,
+                                   &direct_port) != 0 ||
+            direct_port > 65535u ||
+            api_parse_optional_u32(req, "max_socks_streams",
                                    max_socks_streams,
                                    &max_socks_streams) != 0 ||
             api_parse_optional_u32(req, "socks_idle_timeout_sec",
@@ -863,7 +872,8 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         }
         if (ntap_a_db_edit_node(cfg->db_file, id, name, node_id, node_key,
                                 network_id, tap_name, bridge_name,
-                                (uint16_t)mtu, max_socks_streams,
+                                (uint16_t)mtu, (uint16_t)direct_port,
+                                max_socks_streams,
                                 socks_idle_timeout_sec, err, err_len) != 0) {
             return -1;
         }

@@ -24,7 +24,8 @@ SOCKS stream lifecycle persistence and in/out byte counters
 SOCKS stream list/get API exposure for Web management
 per-node max_socks_streams enforcement
 node-level socks_idle_timeout_sec enforcement
+node direct_port management and CONFIG_PUSH delivery
 ```
 
-Direct runtime data path, SOCKS half-close hardening, Web management UI, and
+Direct token/data relay, SOCKS half-close hardening, Web management UI, and
 OpenWrt packaging remain later-phase work.

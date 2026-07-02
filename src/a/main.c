@@ -26,7 +26,8 @@ static void usage(FILE *out)
                   "  ntap-a -c <config> node add --name <name> --node-id <id> "
                   "--node-key <key> --network-id <id> "
                   "[--tap-name <name>] [--bridge-name <name>] [--mtu <mtu>] "
-                  "[--max-socks-streams <n>] [--socks-idle-timeout-sec <n>]\n"
+                  "[--direct-port <port>] [--max-socks-streams <n>] "
+                  "[--socks-idle-timeout-sec <n>]\n"
                   "  ntap-a -c <config> tap-user add --username <name> "
                   "--password <password> --network-id <id>\n"
                   "  ntap-a -c <config> node list\n");
@@ -163,8 +164,10 @@ static int handle_node_add(const ntap_a_config_t *cfg, int argc, char **argv,
     const char *tap_name = arg_value(argc, argv, start, "--tap-name");
     const char *bridge_name = arg_value(argc, argv, start, "--bridge-name");
     const char *mtu_s = arg_value(argc, argv, start, "--mtu");
+    const char *direct_port_s = arg_value(argc, argv, start, "--direct-port");
     int64_t network_id = 0;
     int64_t mtu = NTAP_DEFAULT_MTU;
+    int64_t direct_port = 0;
     uint32_t max_socks_streams = NTAP_A_DEFAULT_MAX_SOCKS_STREAMS;
     uint32_t socks_idle_timeout_sec = NTAP_A_DEFAULT_SOCKS_IDLE_TIMEOUT_SEC;
 
@@ -181,6 +184,12 @@ static int handle_node_add(const ntap_a_config_t *cfg, int argc, char **argv,
                       NTAP_MIN_MTU, NTAP_MAX_MTU);
         return 2;
     }
+    if (direct_port_s != NULL &&
+        (parse_i64(direct_port_s, &direct_port) != 0 ||
+         direct_port < 0 || direct_port > 65535)) {
+        (void)fprintf(stderr, "ntap-a: --direct-port must be between 0 and 65535\n");
+        return 2;
+    }
     if (parse_optional_u32_arg(argc, argv, start, "--max-socks-streams",
                                NTAP_A_DEFAULT_MAX_SOCKS_STREAMS,
                                &max_socks_streams) != 0 ||
@@ -193,7 +202,8 @@ static int handle_node_add(const ntap_a_config_t *cfg, int argc, char **argv,
     }
     if (ntap_a_db_add_node(cfg->db_file, name, node_id, node_key, network_id,
                            tap_name, bridge_name, (uint16_t)mtu,
-                           max_socks_streams, socks_idle_timeout_sec,
+                           (uint16_t)direct_port, max_socks_streams,
+                           socks_idle_timeout_sec,
                            err, err_len) != 0) {
         (void)fprintf(stderr, "ntap-a: node add failed: %s\n", err);
         return 1;
