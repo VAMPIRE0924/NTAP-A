@@ -3,7 +3,7 @@ EXEEXT := .exe
 BUILD_FLAVOR := msys2
 MKDIR_P := /usr/bin/mkdir -p
 RM_RF := /usr/bin/rm -rf
-NET_LIBS := -lws2_32
+NET_LIBS := -lws2_32 -ladvapi32
 THREAD_LIBS :=
 ifeq ($(origin CC),default)
 CC := /ucrt64/bin/gcc

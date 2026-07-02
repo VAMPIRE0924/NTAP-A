@@ -7,6 +7,11 @@
 typedef struct ntap_tap {
     int fd;
     char name[64];
+#ifdef _WIN32
+    void *handle;
+    void *read_event;
+    void *write_event;
+#endif
 } ntap_tap_t;
 
 int ntap_tap_open(ntap_tap_t *tap, const char *name, uint16_t mtu,
@@ -17,6 +22,7 @@ int ntap_tap_write(ntap_tap_t *tap, const uint8_t *buf, size_t len,
                    char *err, size_t err_len);
 int ntap_tap_attach_bridge(ntap_tap_t *tap, const char *bridge_name,
                            char *err, size_t err_len);
+void ntap_tap_interrupt(ntap_tap_t *tap);
 void ntap_tap_close(ntap_tap_t *tap);
 
 #endif
