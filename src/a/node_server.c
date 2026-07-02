@@ -243,7 +243,7 @@ static int send_config_push(ntap_socket_t fd, uint32_t session_id,
                             char *err, size_t err_len)
 {
     ntap_config_push_t config;
-    uint8_t payload[256];
+    uint8_t payload[NTAP_PAYLOAD_MAX_CONTROL];
     size_t payload_len = 0;
 
     if (runtime == NULL || runtime->network_id <= 0) {
@@ -251,7 +251,7 @@ static int send_config_push(ntap_socket_t fd, uint32_t session_id,
         return -1;
     }
     (void)memset(&config, 0, sizeof(config));
-    config.config_version = 1u;
+    config.config_version = 2u;
     config.network_id = (uint32_t)runtime->network_id;
     config.tap_enabled = runtime->tap_enabled ? 1u : 0u;
     config.socks_enabled = runtime->socks_enabled ? 1u : 0u;
@@ -264,6 +264,14 @@ static int send_config_push(ntap_socket_t fd, uint32_t session_id,
     }
     config.mtu = runtime->mtu;
     config.direct_port = runtime->direct_port;
+    if (copy_config_text(config.direct_mode, sizeof(config.direct_mode),
+                         runtime->direct_mode, "direct_mode", err, err_len) != 0 ||
+        copy_config_text(config.direct_addr, sizeof(config.direct_addr),
+                         runtime->direct_addr, "direct_addr", err, err_len) != 0 ||
+        copy_config_text(config.direct_token, sizeof(config.direct_token),
+                         runtime->direct_token, "direct_token", err, err_len) != 0) {
+        return -1;
+    }
     if (ntap_encode_config_push(payload, sizeof(payload), &payload_len, &config) != 0) {
         (void)snprintf(err, err_len, "failed to encode CONFIG_PUSH");
         return -1;
@@ -1497,6 +1505,8 @@ static int handle_node(ntap_socket_t fd, const ntap_a_config_t *cfg,
         auth_ok.feature_bits = 0;
         if (ntap_a_db_get_tap_runtime_config(cfg->db_file, tap_user.network_id,
                                              &runtime_config, err, err_len) != 0 ||
+            ntap_a_db_attach_tap_direct_strategy(cfg->db_file, tap_user.tap_user_id,
+                                                 &runtime_config, err, err_len) != 0 ||
             runtime_config.network_id != tap_user.network_id ||
             ntap_encode_auth_ok(auth_ok_payload, &auth_ok) != 0 ||
             ntap_send_msg(fd, NTAP_MSG_AUTH_OK, auth_ok.session_id,

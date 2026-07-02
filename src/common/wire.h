@@ -13,6 +13,9 @@
 #define NTAP_TAP_FRAME_OVERHEAD 6u
 #define NTAP_TAP_NAME_MAX 64u
 #define NTAP_BRIDGE_NAME_MAX 64u
+#define NTAP_DIRECT_MODE_MAX 32u
+#define NTAP_DIRECT_ADDR_MAX 256u
+#define NTAP_DIRECT_TOKEN_TEXT_MAX 1024u
 #define NTAP_SOCKS_HOST_MAX 256u
 #define NTAP_SOCKS_DATA_OVERHEAD 4u
 #define NTAP_SOCKS_CLOSE_BASE_SIZE 4u
@@ -65,6 +68,9 @@ typedef struct ntap_config_push {
     uint16_t mtu;
     uint16_t direct_port;
     uint32_t flags;
+    char direct_mode[NTAP_DIRECT_MODE_MAX];
+    char direct_addr[NTAP_DIRECT_ADDR_MAX];
+    char direct_token[NTAP_DIRECT_TOKEN_TEXT_MAX];
 } ntap_config_push_t;
 
 typedef struct ntap_tap_frame {

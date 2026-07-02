@@ -316,6 +316,11 @@ int ntap_encode_config_push(uint8_t *out, size_t cap, size_t *len,
     if (ntap_buffer_append(&buf, raw32, sizeof(raw32)) != 0) {
         goto done;
     }
+    if (append_string(&buf, config->direct_mode) != 0 ||
+        append_string(&buf, config->direct_addr) != 0 ||
+        append_string(&buf, config->direct_token) != 0) {
+        goto done;
+    }
     if (buf.len > cap) {
         goto done;
     }
@@ -345,7 +350,7 @@ int ntap_decode_config_push(ntap_config_push_t *out, const uint8_t *payload, siz
     out->direct_enabled = payload[pos++];
     if (read_string(out->tap_name, sizeof(out->tap_name), payload, len, &pos) != 0 ||
         read_string(out->bridge_name, sizeof(out->bridge_name), payload, len, &pos) != 0 ||
-        pos + 2u + 2u + 4u != len) {
+        pos + 2u + 2u + 4u > len) {
         return -1;
     }
     out->mtu = get_be16(payload + pos);
@@ -353,7 +358,17 @@ int ntap_decode_config_push(ntap_config_push_t *out, const uint8_t *payload, siz
     out->direct_port = get_be16(payload + pos);
     pos += 2u;
     out->flags = get_be32(payload + pos);
+    pos += 4u;
     if (out->network_id == 0u || out->mtu < NTAP_MIN_MTU || out->mtu > NTAP_MAX_MTU) {
+        return -1;
+    }
+    if (pos == len) {
+        return 0;
+    }
+    if (read_string(out->direct_mode, sizeof(out->direct_mode), payload, len, &pos) != 0 ||
+        read_string(out->direct_addr, sizeof(out->direct_addr), payload, len, &pos) != 0 ||
+        read_string(out->direct_token, sizeof(out->direct_token), payload, len, &pos) != 0 ||
+        pos != len) {
         return -1;
     }
     return 0;

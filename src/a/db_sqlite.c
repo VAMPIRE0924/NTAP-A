@@ -378,6 +378,7 @@ int ntap_a_db_init(const char *db_file, char *err, size_t err_len)
         " socks_enabled INTEGER NOT NULL DEFAULT 0,"
         " direct_enabled INTEGER NOT NULL DEFAULT 0,"
         " direct_reachable INTEGER NOT NULL DEFAULT 0,"
+        " direct_addr TEXT NOT NULL DEFAULT '',"
         " tap_name TEXT NOT NULL DEFAULT 'ntap-b0',"
         " bridge_name TEXT NOT NULL DEFAULT 'br-lan',"
         " mtu INTEGER NOT NULL DEFAULT 1400,"
@@ -506,6 +507,8 @@ int ntap_a_db_init(const char *db_file, char *err, size_t err_len)
                               "INTEGER NOT NULL DEFAULT 0", err, err_len) != 0 ||
         add_column_if_missing(db, "nodes", "direct_port",
                               "INTEGER NOT NULL DEFAULT 0", err, err_len) != 0 ||
+        add_column_if_missing(db, "nodes", "direct_addr",
+                              "TEXT NOT NULL DEFAULT ''", err, err_len) != 0 ||
         add_column_if_missing(db, "nodes", "max_socks_streams",
                               "INTEGER NOT NULL DEFAULT 64", err, err_len) != 0 ||
         add_column_if_missing(db, "nodes", "socks_idle_timeout_sec",
@@ -1785,6 +1788,113 @@ int ntap_a_db_get_tap_runtime_config(const char *db_file, int64_t network_id,
     return 0;
 }
 
+int ntap_a_db_attach_tap_direct_strategy(const char *db_file, int64_t tap_user_id,
+                                         ntap_a_runtime_config_t *runtime,
+                                         char *err, size_t err_len)
+{
+    sqlite3 *db = NULL;
+    sqlite3_stmt *stmt = NULL;
+    char token[NTAP_DIRECT_TOKEN_MAX];
+    char nonce[NTAP_DIRECT_TOKEN_NONCE_HEX_SIZE];
+    const unsigned char *node_id_text = NULL;
+    const unsigned char *node_key_text = NULL;
+    const unsigned char *direct_addr_text = NULL;
+    uint64_t now = ntap_time_unix_sec();
+    uint64_t expire_at = now + 60u;
+    int direct_port = 0;
+    int rc = 0;
+
+    if (runtime == NULL || runtime->network_id <= 0 || tap_user_id <= 0) {
+        if (err != NULL && err_len > 0) {
+            (void)snprintf(err, err_len, "invalid tap direct strategy request");
+        }
+        return -1;
+    }
+    (void)snprintf(runtime->direct_mode, sizeof(runtime->direct_mode), "%s", "relay");
+    runtime->direct_addr[0] = '\0';
+    runtime->direct_token[0] = '\0';
+    runtime->direct_enabled = 0;
+    runtime->direct_port = 0;
+
+    if (db_open(db_file, &db, err, err_len) != 0) {
+        return -1;
+    }
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT n.node_id, n.node_key_secret, n.direct_addr, n.direct_port"
+        " FROM nodes n"
+        " JOIN networks net ON net.id = n.network_id"
+        " JOIN tap_users u ON u.id = ?"
+        " JOIN tap_grants g ON g.tap_user_id = u.id"
+        "  AND g.network_id = n.network_id"
+        " WHERE n.network_id = ?"
+        "  AND n.enabled = 1"
+        "  AND n.online = 1"
+        "  AND n.direct_enabled = 1"
+        "  AND n.direct_reachable = 1"
+        "  AND n.direct_port > 0"
+        "  AND n.direct_addr <> ''"
+        "  AND net.enabled = 1"
+        "  AND u.enabled = 1"
+        "  AND (u.expire_at = 0 OR u.expire_at >= ?)"
+        "  AND g.enabled = 1"
+        " ORDER BY n.last_seen DESC, n.id ASC"
+        " LIMIT 1;",
+        -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        db_set_err(err, err_len, "prepare tap direct strategy lookup failed", db);
+        sqlite3_close(db);
+        return -1;
+    }
+    (void)sqlite3_bind_int64(stmt, 1, (sqlite3_int64)tap_user_id);
+    (void)sqlite3_bind_int64(stmt, 2, (sqlite3_int64)runtime->network_id);
+    (void)sqlite3_bind_int64(stmt, 3, (sqlite3_int64)now);
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return 0;
+    }
+    if (rc != SQLITE_ROW) {
+        db_set_err(err, err_len, "read tap direct strategy lookup failed", db);
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    node_id_text = sqlite3_column_text(stmt, 0);
+    node_key_text = sqlite3_column_text(stmt, 1);
+    direct_addr_text = sqlite3_column_text(stmt, 2);
+    direct_port = sqlite3_column_int(stmt, 3);
+    if (node_id_text == NULL || node_key_text == NULL ||
+        direct_addr_text == NULL || direct_addr_text[0] == '\0' ||
+        direct_port <= 0 || direct_port > 65535) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return 0;
+    }
+    if (ntap_direct_token_random_nonce(nonce) != 0 ||
+        ntap_direct_token_make(token, sizeof(token),
+                               (const char *)node_key_text, tap_user_id,
+                               (const char *)node_id_text, runtime->network_id,
+                               expire_at, nonce) != 0) {
+        (void)snprintf(err, err_len, "failed to issue tap direct strategy token");
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+
+    (void)snprintf(runtime->direct_mode, sizeof(runtime->direct_mode), "%s",
+                   "direct_first");
+    (void)snprintf(runtime->direct_addr, sizeof(runtime->direct_addr), "%s",
+                   (const char *)direct_addr_text);
+    (void)snprintf(runtime->direct_token, sizeof(runtime->direct_token), "%s", token);
+    runtime->direct_enabled = 1;
+    runtime->direct_port = (uint16_t)direct_port;
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return 0;
+}
+
 static int db_update_enabled_by_id(const char *db_file, const char *sql,
                                    int64_t id, int enabled,
                                    const char *prepare_prefix,
@@ -1997,6 +2107,58 @@ int ntap_a_db_set_node_direct_reachable(const char *db_file, int64_t id,
         "update direct reachable failed", "node not found", err, err_len);
 }
 
+int ntap_a_db_set_node_direct_probe(const char *db_file, int64_t id,
+                                    int reachable, const char *addr,
+                                    char *err, size_t err_len)
+{
+    sqlite3 *db = NULL;
+    sqlite3_stmt *stmt = NULL;
+    uint64_t now = ntap_time_unix_sec();
+    int rc = 0;
+
+    if (id <= 0 || addr == NULL || *addr == '\0') {
+        if (err != NULL && err_len > 0) {
+            (void)snprintf(err, err_len, "invalid direct probe update");
+        }
+        return -1;
+    }
+    if (db_open(db_file, &db, err, err_len) != 0) {
+        return -1;
+    }
+    rc = sqlite3_prepare_v2(
+        db,
+        "UPDATE nodes SET direct_reachable = ?, direct_addr = ?, updated_at = ?"
+        " WHERE id = ?;",
+        -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        db_set_err(err, err_len, "prepare direct probe update failed", db);
+        sqlite3_close(db);
+        return -1;
+    }
+    (void)sqlite3_bind_int(stmt, 1, reachable ? 1 : 0);
+    (void)sqlite3_bind_text(stmt, 2, addr, -1, SQLITE_TRANSIENT);
+    (void)sqlite3_bind_int64(stmt, 3, (sqlite3_int64)now);
+    (void)sqlite3_bind_int64(stmt, 4, (sqlite3_int64)id);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        db_set_err(err, err_len, "update direct probe failed", db);
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    if (sqlite3_changes(db) == 0) {
+        if (err != NULL && err_len > 0) {
+            (void)snprintf(err, err_len, "node not found");
+        }
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return 0;
+}
+
 int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
                                  int64_t tap_user_id, uint32_t ttl_sec,
                                  char **out_json, char *err, size_t err_len)
@@ -2133,6 +2295,8 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
     char nonce[NTAP_DIRECT_TOKEN_NONCE_HEX_SIZE];
     const unsigned char *node_id_text = NULL;
     const unsigned char *node_key_text = NULL;
+    const unsigned char *direct_addr_text = NULL;
+    const char *effective_direct_addr = NULL;
     const char *mode = "relay";
     const char *reason = "direct_unavailable";
     int64_t network_id = 0;
@@ -2151,8 +2315,7 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
         return -1;
     }
     *out_json = NULL;
-    if (node_pk <= 0 || tap_user_id <= 0 ||
-        direct_addr == NULL || *direct_addr == '\0') {
+    if (node_pk <= 0 || tap_user_id <= 0) {
         if (err != NULL && err_len > 0) {
             (void)snprintf(err, err_len, "invalid direct strategy request");
         }
@@ -2171,7 +2334,7 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
         db,
         "SELECT n.node_id, n.node_key_secret, n.network_id,"
         " n.direct_enabled, n.direct_reachable, n.direct_port,"
-        " n.enabled, net.enabled, u.enabled, g.enabled"
+        " n.direct_addr, n.enabled, net.enabled, u.enabled, g.enabled"
         " FROM nodes n"
         " JOIN networks net ON net.id = n.network_id"
         " JOIN tap_users u ON u.id = ?"
@@ -2203,10 +2366,11 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
     direct_enabled = sqlite3_column_int(stmt, 3);
     direct_reachable = sqlite3_column_int(stmt, 4);
     direct_port = sqlite3_column_int(stmt, 5);
-    node_enabled = sqlite3_column_int(stmt, 6);
-    network_enabled = sqlite3_column_int(stmt, 7);
-    tap_user_enabled = sqlite3_column_int(stmt, 8);
-    grant_enabled = sqlite3_column_int(stmt, 9);
+    direct_addr_text = sqlite3_column_text(stmt, 6);
+    node_enabled = sqlite3_column_int(stmt, 7);
+    network_enabled = sqlite3_column_int(stmt, 8);
+    tap_user_enabled = sqlite3_column_int(stmt, 9);
+    grant_enabled = sqlite3_column_int(stmt, 10);
     if (node_id_text == NULL || node_key_text == NULL || network_id <= 0 ||
         !node_enabled || !network_enabled || !tap_user_enabled || !grant_enabled) {
         (void)snprintf(err, err_len, "direct strategy not allowed");
@@ -2216,10 +2380,14 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
     }
 
     token[0] = '\0';
+    effective_direct_addr = (direct_addr != NULL && *direct_addr != '\0') ?
+        direct_addr : (const char *)direct_addr_text;
     if (!direct_enabled) {
         reason = "direct_disabled";
     } else if (direct_port <= 0) {
         reason = "direct_port_missing";
+    } else if (effective_direct_addr == NULL || *effective_direct_addr == '\0') {
+        reason = "direct_addr_missing";
     } else if (!direct_reachable) {
         reason = "direct_unreachable";
     } else {
@@ -2254,7 +2422,8 @@ int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
                      (long long)network_id, (long long)tap_user_id,
                      direct_enabled ? 1 : 0, direct_reachable ? 1 : 0,
                      direct_port) != 0 ||
-        json_append_string(&json, (const unsigned char *)direct_addr) != 0) {
+        json_append_string(&json, (const unsigned char *)
+                           (effective_direct_addr == NULL ? "" : effective_direct_addr)) != 0) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         free(json.data);
@@ -2638,29 +2807,34 @@ static int json_append_node_row(json_buf_t *json, sqlite3_stmt *stmt)
            json_appendf(json,
                         ",\"network_id\":%lld,\"enabled\":%d,"
                         "\"tap_enabled\":%d,\"socks_enabled\":%d,"
-                        "\"direct_enabled\":%d,\"tap_name\":",
+                        "\"direct_enabled\":%d,\"direct_reachable\":%d,"
+                        "\"tap_name\":",
                         (long long)sqlite3_column_int64(stmt, 3),
                         sqlite3_column_int(stmt, 4),
                         sqlite3_column_int(stmt, 5),
                         sqlite3_column_int(stmt, 6),
-                        sqlite3_column_int(stmt, 7)) != 0 ||
-           json_append_string(json, sqlite3_column_text(stmt, 8)) != 0 ||
-           json_append(json, ",\"bridge_name\":") != 0 ||
+                        sqlite3_column_int(stmt, 7),
+                        sqlite3_column_int(stmt, 8)) != 0 ||
            json_append_string(json, sqlite3_column_text(stmt, 9)) != 0 ||
+           json_append(json, ",\"bridge_name\":") != 0 ||
+           json_append_string(json, sqlite3_column_text(stmt, 10)) != 0 ||
            json_appendf(json,
                         ",\"mtu\":%d,\"direct_port\":%d,"
-                        "\"max_socks_streams\":%d,"
+                        "\"direct_addr\":",
+                        sqlite3_column_int(stmt, 11),
+                        sqlite3_column_int(stmt, 12)) != 0 ||
+           json_append_string(json, sqlite3_column_text(stmt, 13)) != 0 ||
+           json_appendf(json,
+                        ",\"max_socks_streams\":%d,"
                         "\"socks_idle_timeout_sec\":%d,"
                         "\"online\":%d,\"last_seen\":%lld,"
                         "\"created_at\":%lld,\"updated_at\":%lld}",
-                        sqlite3_column_int(stmt, 10),
-                        sqlite3_column_int(stmt, 11),
-                        sqlite3_column_int(stmt, 12),
-                        sqlite3_column_int(stmt, 13),
                         sqlite3_column_int(stmt, 14),
-                        (long long)sqlite3_column_int64(stmt, 15),
-                        (long long)sqlite3_column_int64(stmt, 16),
-                        (long long)sqlite3_column_int64(stmt, 17)) != 0 ? -1 : 0;
+                        sqlite3_column_int(stmt, 15),
+                        sqlite3_column_int(stmt, 16),
+                        (long long)sqlite3_column_int64(stmt, 17),
+                        (long long)sqlite3_column_int64(stmt, 18),
+                        (long long)sqlite3_column_int64(stmt, 19)) != 0 ? -1 : 0;
 }
 
 static int json_append_tap_user_row(json_buf_t *json, sqlite3_stmt *stmt)
@@ -2938,7 +3112,8 @@ int ntap_a_db_json_nodes(const char *db_file, char **out_json,
     rc = sqlite3_prepare_v2(db,
                             "SELECT id, node_id, name, network_id, enabled,"
                             " tap_enabled, socks_enabled, direct_enabled,"
-                            " tap_name, bridge_name, mtu, direct_port,"
+                            " direct_reachable, tap_name, bridge_name, mtu,"
+                            " direct_port, direct_addr,"
                             " max_socks_streams, socks_idle_timeout_sec,"
                             " online, last_seen, created_at, updated_at"
                             " FROM nodes ORDER BY id;",
@@ -2991,7 +3166,8 @@ int ntap_a_db_json_node(const char *db_file, int64_t id, char **out_json,
         db_file, id,
         "SELECT id, node_id, name, network_id, enabled,"
         " tap_enabled, socks_enabled, direct_enabled,"
-        " tap_name, bridge_name, mtu, direct_port,"
+        " direct_reachable, tap_name, bridge_name, mtu,"
+        " direct_port, direct_addr,"
         " max_socks_streams, socks_idle_timeout_sec,"
         " online, last_seen, created_at, updated_at"
         " FROM nodes WHERE id = ?;",
@@ -3025,7 +3201,7 @@ int ntap_a_db_json_node_service_status(const char *db_file, int64_t id,
     rc = sqlite3_prepare_v2(db,
                             "SELECT id, node_id, name, tap_enabled,"
                             " socks_enabled, direct_enabled, direct_reachable,"
-                            " direct_port, updated_at"
+                            " direct_port, direct_addr, updated_at"
                             " FROM nodes WHERE id = ?;",
                             -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
@@ -3055,13 +3231,15 @@ int ntap_a_db_json_node_service_status(const char *db_file, int64_t id,
         json_appendf(&json,
                      ",\"tap_enabled\":%d,\"socks_enabled\":%d,"
                      "\"direct_enabled\":%d,\"direct_reachable\":%d,"
-                     "\"direct_port\":%d,\"updated_at\":%lld}}",
+                     "\"direct_port\":%d,\"direct_addr\":",
                      sqlite3_column_int(stmt, 3),
                      sqlite3_column_int(stmt, 4),
                      sqlite3_column_int(stmt, 5),
                      sqlite3_column_int(stmt, 6),
-                     sqlite3_column_int(stmt, 7),
-                     (long long)sqlite3_column_int64(stmt, 8)) != 0) {
+                     sqlite3_column_int(stmt, 7)) != 0 ||
+        json_append_string(&json, sqlite3_column_text(stmt, 8)) != 0 ||
+        json_appendf(&json, ",\"updated_at\":%lld}}",
+                     (long long)sqlite3_column_int64(stmt, 9)) != 0) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         free(json.data);

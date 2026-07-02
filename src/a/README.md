@@ -28,7 +28,8 @@ node direct_port management and CONFIG_PUSH delivery
 direct-token issue API for granted TAP users
 direct probe API that updates node direct_reachable status
 direct strategy API that returns direct_first or relay startup packages
+automatic CONFIG_PUSH direct_first strategy distribution for TAP clients
 ```
 
-Direct strategy auto-distribution, SOCKS half-close hardening, Web management
-UI, and OpenWrt packaging remain later-phase work.
+SOCKS half-close hardening, Web management UI, and OpenWrt packaging remain
+later-phase work.

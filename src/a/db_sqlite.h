@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "common/config.h"
+#include "common/direct_token.h"
 
 #define NTAP_A_DEFAULT_MAC_TTL_SEC 300u
 #define NTAP_A_DEFAULT_BROADCAST_LIMIT_PPS 200u
@@ -60,6 +61,9 @@ typedef struct ntap_a_runtime_config {
     char tap_name[NTAP_CONFIG_VALUE_MAX];
     char bridge_name[NTAP_CONFIG_VALUE_MAX];
     uint16_t direct_port;
+    char direct_mode[32];
+    char direct_addr[NTAP_CONFIG_VALUE_MAX];
+    char direct_token[NTAP_DIRECT_TOKEN_MAX];
     uint32_t mac_ttl_sec;
     uint32_t broadcast_limit_pps;
     uint32_t session_broadcast_limit_pps;
@@ -142,6 +146,9 @@ int ntap_a_db_get_node_runtime_config(const char *db_file, const char *node_id,
 int ntap_a_db_get_tap_runtime_config(const char *db_file, int64_t network_id,
                                      ntap_a_runtime_config_t *out,
                                      char *err, size_t err_len);
+int ntap_a_db_attach_tap_direct_strategy(const char *db_file, int64_t tap_user_id,
+                                         ntap_a_runtime_config_t *runtime,
+                                         char *err, size_t err_len);
 int ntap_a_db_set_node_online(const char *db_file, const char *node_id, int online,
                               char *err, size_t err_len);
 int ntap_a_db_set_network_enabled(const char *db_file, int64_t id, int enabled,
@@ -157,6 +164,9 @@ int ntap_a_db_set_node_service_enabled(const char *db_file, int64_t id,
                                        char *err, size_t err_len);
 int ntap_a_db_set_node_direct_reachable(const char *db_file, int64_t id,
                                         int reachable, char *err, size_t err_len);
+int ntap_a_db_set_node_direct_probe(const char *db_file, int64_t id,
+                                    int reachable, const char *addr,
+                                    char *err, size_t err_len);
 int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
                                  int64_t tap_user_id, uint32_t ttl_sec,
                                  char **out_json, char *err, size_t err_len);

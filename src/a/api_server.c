@@ -1105,8 +1105,8 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
             reachable = 1;
             ntap_socket_close(probe_fd);
         }
-        if (ntap_a_db_set_node_direct_reachable(cfg->db_file, id, reachable,
-                                                err, err_len) != 0) {
+        if (ntap_a_db_set_node_direct_probe(cfg->db_file, id, reachable, addr,
+                                            err, err_len) != 0) {
             return -1;
         }
         (void)snprintf(response, sizeof(response),
@@ -1124,11 +1124,13 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         if (api_form_required_node_pk(req, &node_pk, err, err_len) != 0 ||
             api_form_required_i64(req, "tap_user_id", &tap_user_id,
                                   err, err_len) != 0 ||
-            api_form_required(req, "addr", addr, sizeof(addr), err, err_len) != 0 ||
             api_parse_optional_u32(req, "ttl_sec", 60u, &ttl_sec) != 0 ||
             ttl_sec == 0) {
             (void)snprintf(err, err_len, "invalid direct strategy request");
             return -1;
+        }
+        if (api_form_get(req, "addr", addr, sizeof(addr)) != 0) {
+            addr[0] = '\0';
         }
         return ntap_a_db_issue_direct_strategy(cfg->db_file, node_pk, tap_user_id,
                                                addr, ttl_sec, out_json,
