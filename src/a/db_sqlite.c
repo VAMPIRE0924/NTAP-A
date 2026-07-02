@@ -1987,6 +1987,16 @@ int ntap_a_db_set_node_service_enabled(const char *db_file, int64_t id,
         "update node service failed", "node not found", err, err_len);
 }
 
+int ntap_a_db_set_node_direct_reachable(const char *db_file, int64_t id,
+                                        int reachable, char *err, size_t err_len)
+{
+    return db_update_enabled_by_id(
+        db_file,
+        "UPDATE nodes SET direct_reachable = ?, updated_at = ? WHERE id = ?;",
+        id, reachable ? 1 : 0, "prepare direct reachable update failed",
+        "update direct reachable failed", "node not found", err, err_len);
+}
+
 int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
                                  int64_t tap_user_id, uint32_t ttl_sec,
                                  char **out_json, char *err, size_t err_len)

@@ -32,6 +32,8 @@ int ntap_tcp_listen(const char *addr, int backlog, ntap_socket_t *out,
 int ntap_tcp_accept(ntap_socket_t listen_fd, ntap_socket_t *out,
                     char *remote, size_t remote_len, char *err, size_t err_len);
 int ntap_tcp_connect(const char *addr, ntap_socket_t *out, char *err, size_t err_len);
+int ntap_tcp_connect_timeout(const char *addr, unsigned int timeout_ms,
+                             ntap_socket_t *out, char *err, size_t err_len);
 
 int ntap_send_all(ntap_socket_t fd, const void *data, size_t len, char *err, size_t err_len);
 int ntap_send_all_timeout(ntap_socket_t fd, const void *data, size_t len,

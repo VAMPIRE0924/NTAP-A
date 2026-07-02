@@ -54,6 +54,45 @@ static int net_interrupted(void)
 #endif
 }
 
+static int net_connect_in_progress(void)
+{
+#ifdef _WIN32
+    int rc = WSAGetLastError();
+
+    return rc == WSAEWOULDBLOCK || rc == WSAEINPROGRESS ||
+           rc == WSAEALREADY || rc == WSAEINTR;
+#else
+    return errno == EINPROGRESS || errno == EALREADY ||
+           errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+#endif
+}
+
+static int net_socket_connect_error(ntap_socket_t fd, char *err, size_t err_len)
+{
+    int so_error = 0;
+#ifdef _WIN32
+    int len = (int)sizeof(so_error);
+#else
+    socklen_t len = (socklen_t)sizeof(so_error);
+#endif
+
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&so_error, &len) != 0) {
+        net_set_err(err, err_len, "connect status failed");
+        return -1;
+    }
+    if (so_error != 0) {
+        if (err != NULL && err_len > 0) {
+#ifdef _WIN32
+            (void)snprintf(err, err_len, "connect failed: wsa=%d", so_error);
+#else
+            (void)snprintf(err, err_len, "connect failed: %s", strerror(so_error));
+#endif
+        }
+        return -1;
+    }
+    return 0;
+}
+
 static int wait_socket_ready(ntap_socket_t fd, int want_write,
                              unsigned int timeout_ms,
                              char *err, size_t err_len)
@@ -374,6 +413,65 @@ int ntap_tcp_connect(const char *addr, ntap_socket_t *out, char *err, size_t err
     }
     freeaddrinfo(res);
     net_set_err(err, err_len, "connect failed");
+    return -1;
+}
+
+int ntap_tcp_connect_timeout(const char *addr, unsigned int timeout_ms,
+                             ntap_socket_t *out, char *err, size_t err_len)
+{
+    char host[256];
+    char port[32];
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    struct addrinfo *it = NULL;
+    ntap_socket_t fd = NTAP_INVALID_SOCKET;
+
+    if (timeout_ms == 0) {
+        timeout_ms = 1000u;
+    }
+    if (out == NULL || parse_addr(addr, host, sizeof(host), port, sizeof(port)) != 0) {
+        if (err != NULL && err_len > 0) {
+            (void)snprintf(err, err_len, "invalid connect address");
+        }
+        return -1;
+    }
+    *out = NTAP_INVALID_SOCKET;
+    (void)memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port, &hints, &res) != 0) {
+        net_set_err(err, err_len, "getaddrinfo connect failed");
+        return -1;
+    }
+    for (it = res; it != NULL; it = it->ai_next) {
+        fd = (ntap_socket_t)socket(it->ai_family, it->ai_socktype, it->ai_protocol);
+        if (fd == NTAP_INVALID_SOCKET) {
+            continue;
+        }
+        if (ntap_socket_set_nonblocking(fd, 1, err, err_len) != 0) {
+            ntap_socket_close(fd);
+            fd = NTAP_INVALID_SOCKET;
+            continue;
+        }
+        if (connect(fd, it->ai_addr, (int)it->ai_addrlen) == 0 ||
+            net_connect_in_progress()) {
+            if (wait_socket_ready(fd, 1, timeout_ms, err, err_len) == 0 &&
+                net_socket_connect_error(fd, err, err_len) == 0 &&
+                ntap_socket_set_nonblocking(fd, 0, err, err_len) == 0) {
+                freeaddrinfo(res);
+                *out = fd;
+                return 0;
+            }
+        } else {
+            net_set_err(err, err_len, "connect failed");
+        }
+        ntap_socket_close(fd);
+        fd = NTAP_INVALID_SOCKET;
+    }
+    freeaddrinfo(res);
+    if (err != NULL && err_len > 0 && err[0] == '\0') {
+        (void)snprintf(err, err_len, "connect failed");
+    }
     return -1;
 }
 

@@ -155,6 +155,8 @@ int ntap_a_db_set_socks_user_enabled(const char *db_file, int64_t id, int enable
 int ntap_a_db_set_node_service_enabled(const char *db_file, int64_t id,
                                        const char *service_type, int enabled,
                                        char *err, size_t err_len);
+int ntap_a_db_set_node_direct_reachable(const char *db_file, int64_t id,
+                                        int reachable, char *err, size_t err_len);
 int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
                                  int64_t tap_user_id, uint32_t ttl_sec,
                                  char **out_json, char *err, size_t err_len);

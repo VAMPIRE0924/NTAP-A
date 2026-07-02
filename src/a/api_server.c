@@ -1083,6 +1083,38 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         return ntap_a_db_json_node_service_status(cfg->db_file, id, out_json,
                                                   err, err_len);
     }
+    if (strcmp(req->path, "/api/direct/probe") == 0) {
+        int64_t id = 0;
+        uint32_t timeout_ms = 1000u;
+        char addr[NTAP_CONFIG_VALUE_MAX];
+        char probe_err[128];
+        ntap_socket_t probe_fd = NTAP_INVALID_SOCKET;
+        int reachable = 0;
+        char response[160];
+
+        if (api_form_required_node_pk(req, &id, err, err_len) != 0 ||
+            api_form_required(req, "addr", addr, sizeof(addr), err, err_len) != 0 ||
+            api_parse_optional_u32(req, "timeout_ms", 1000u, &timeout_ms) != 0 ||
+            timeout_ms == 0 || timeout_ms > 10000u) {
+            (void)snprintf(err, err_len, "invalid direct probe request");
+            return -1;
+        }
+        probe_err[0] = '\0';
+        if (ntap_tcp_connect_timeout(addr, timeout_ms, &probe_fd,
+                                     probe_err, sizeof(probe_err)) == 0) {
+            reachable = 1;
+            ntap_socket_close(probe_fd);
+        }
+        if (ntap_a_db_set_node_direct_reachable(cfg->db_file, id, reachable,
+                                                err, err_len) != 0) {
+            return -1;
+        }
+        (void)snprintf(response, sizeof(response),
+                       "{\"code\":1,\"data\":{\"id\":%lld,\"reachable\":%d,"
+                       "\"timeout_ms\":%u}}",
+                       (long long)id, reachable, timeout_ms);
+        return api_strdup_response(response, out_json, err, err_len);
+    }
     if (strcmp(req->path, "/api/direct-token/issue") == 0) {
         int64_t node_pk = 0;
         int64_t tap_user_id = 0;

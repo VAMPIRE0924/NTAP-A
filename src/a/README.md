@@ -26,7 +26,8 @@ per-node max_socks_streams enforcement
 node-level socks_idle_timeout_sec enforcement
 node direct_port management and CONFIG_PUSH delivery
 direct-token issue API for granted TAP users
+direct probe API that updates node direct_reachable status
 ```
 
-Direct public reachability probing/strategy delivery, SOCKS half-close
-hardening, Web management UI, and OpenWrt packaging remain later-phase work.
+Direct strategy delivery, SOCKS half-close hardening, Web management UI, and
+OpenWrt packaging remain later-phase work.
