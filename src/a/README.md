@@ -28,6 +28,5 @@ node direct_port management and CONFIG_PUSH delivery
 direct-token issue API for granted TAP users
 ```
 
-Direct public reachability probing, C direct_first relay fallback, SOCKS
-half-close hardening, Web management UI, and OpenWrt packaging remain
-later-phase work.
+Direct public reachability probing/strategy delivery, SOCKS half-close
+hardening, Web management UI, and OpenWrt packaging remain later-phase work.
