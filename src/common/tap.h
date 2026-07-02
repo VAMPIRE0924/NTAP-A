@@ -15,6 +15,8 @@ int ntap_tap_read(ntap_tap_t *tap, uint8_t *buf, size_t cap, size_t *len,
                   char *err, size_t err_len);
 int ntap_tap_write(ntap_tap_t *tap, const uint8_t *buf, size_t len,
                    char *err, size_t err_len);
+int ntap_tap_attach_bridge(ntap_tap_t *tap, const char *bridge_name,
+                           char *err, size_t err_len);
 void ntap_tap_close(ntap_tap_t *tap);
 
 #endif

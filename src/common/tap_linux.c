@@ -40,6 +40,15 @@ int ntap_tap_write(ntap_tap_t *tap, const uint8_t *buf, size_t len,
     return -1;
 }
 
+int ntap_tap_attach_bridge(ntap_tap_t *tap, const char *bridge_name,
+                           char *err, size_t err_len)
+{
+    (void)tap;
+    (void)bridge_name;
+    (void)snprintf(err, err_len, "TAP bridge attach is not supported on Windows in current phase");
+    return -1;
+}
+
 void ntap_tap_close(ntap_tap_t *tap)
 {
     if (tap != NULL) {
@@ -49,6 +58,7 @@ void ntap_tap_close(ntap_tap_t *tap)
 #else
 #include <fcntl.h>
 #include <linux/if_tun.h>
+#include <linux/sockios.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -164,6 +174,53 @@ int ntap_tap_open(ntap_tap_t *tap, const char *name, uint16_t mtu,
     }
     tap->fd = fd;
     (void)snprintf(tap->name, sizeof(tap->name), "%s", ifr.ifr_name);
+    return 0;
+}
+
+int ntap_tap_attach_bridge(ntap_tap_t *tap, const char *bridge_name,
+                           char *err, size_t err_len)
+{
+    int ctl = -1;
+    struct ifreq ifr;
+    unsigned int tap_index = 0;
+
+    if (bridge_name == NULL || *bridge_name == '\0') {
+        return 0;
+    }
+    if (tap == NULL || tap->fd < 0 || tap->name[0] == '\0') {
+        (void)snprintf(err, err_len, "invalid TAP bridge attach arguments");
+        return -1;
+    }
+    if (strlen(bridge_name) >= IFNAMSIZ) {
+        (void)snprintf(err, err_len, "bridge name too long: %s", bridge_name);
+        return -1;
+    }
+    errno = 0;
+    if (if_nametoindex(bridge_name) == 0u) {
+        (void)snprintf(err, err_len, "bridge interface not found: %s", bridge_name);
+        return -1;
+    }
+    errno = 0;
+    tap_index = if_nametoindex(tap->name);
+    if (tap_index == 0u) {
+        (void)snprintf(err, err_len, "TAP interface not found: %s", tap->name);
+        return -1;
+    }
+
+    ctl = socket(AF_INET, SOCK_STREAM, 0);
+    if (ctl < 0) {
+        tap_set_err(err, err_len, "socket bridge attach failed");
+        return -1;
+    }
+    (void)memset(&ifr, 0, sizeof(ifr));
+    (void)snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", bridge_name);
+    ifr.ifr_ifindex = (int)tap_index;
+    if (ioctl(ctl, SIOCBRADDIF, &ifr) < 0) {
+        tap_set_err(err, err_len, "attach TAP to bridge failed");
+        close(ctl);
+        return -1;
+    }
+    close(ctl);
     return 0;
 }
 

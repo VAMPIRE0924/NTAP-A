@@ -380,7 +380,7 @@ int ntap_a_db_init(const char *db_file, char *err, size_t err_len)
         " direct_reachable INTEGER NOT NULL DEFAULT 0,"
         " direct_addr TEXT NOT NULL DEFAULT '',"
         " tap_name TEXT NOT NULL DEFAULT 'ntap-b0',"
-        " bridge_name TEXT NOT NULL DEFAULT 'br-lan',"
+        " bridge_name TEXT NOT NULL DEFAULT '',"
         " mtu INTEGER NOT NULL DEFAULT 1400,"
         " direct_port INTEGER NOT NULL DEFAULT 0,"
         " max_tap_sessions INTEGER NOT NULL DEFAULT 8,"
@@ -609,8 +609,7 @@ int ntap_a_db_add_node(const char *db_file, const char *name, const char *node_i
     char key_hash[NTAP_SHA256_HEX_SIZE];
     const char *stored_tap_name = tap_name == NULL || *tap_name == '\0' ?
                                   "ntap-b0" : tap_name;
-    const char *stored_bridge_name = bridge_name == NULL || *bridge_name == '\0' ?
-                                     "br-lan" : bridge_name;
+    const char *stored_bridge_name = bridge_name == NULL ? "" : bridge_name;
     uint64_t now = ntap_time_unix_sec();
     int rc = 0;
 
@@ -948,8 +947,7 @@ int ntap_a_db_edit_node(const char *db_file, int64_t id, const char *name,
     sqlite3_stmt *stmt = NULL;
     const char *stored_tap_name = tap_name == NULL || *tap_name == '\0' ?
                                   "ntap-b0" : tap_name;
-    const char *stored_bridge_name = bridge_name == NULL || *bridge_name == '\0' ?
-                                     "br-lan" : bridge_name;
+    const char *stored_bridge_name = bridge_name == NULL ? "" : bridge_name;
     const int update_key = node_key != NULL && *node_key != '\0';
     char key_hash[NTAP_SHA256_HEX_SIZE];
     uint64_t now = ntap_time_unix_sec();
