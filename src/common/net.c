@@ -206,6 +206,18 @@ void ntap_socket_shutdown(ntap_socket_t fd)
 #endif
 }
 
+void ntap_socket_shutdown_send(ntap_socket_t fd)
+{
+    if (fd == NTAP_INVALID_SOCKET) {
+        return;
+    }
+#ifdef _WIN32
+    (void)shutdown(fd, SD_SEND);
+#else
+    (void)shutdown(fd, SHUT_WR);
+#endif
+}
+
 int ntap_socket_set_send_timeout(ntap_socket_t fd, unsigned int timeout_ms,
                                  char *err, size_t err_len)
 {

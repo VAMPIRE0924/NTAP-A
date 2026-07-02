@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "a/node_server.h"
 
 #include "a/db_sqlite.h"
@@ -15,12 +19,25 @@
 typedef HANDLE ntap_thread_t;
 typedef CRITICAL_SECTION ntap_mutex_t;
 typedef CONDITION_VARIABLE ntap_cond_t;
+static void sleep_msec(unsigned int msec)
+{
+    Sleep(msec);
+}
 #else
 #include <pthread.h>
 #include <sys/socket.h>
+#include <time.h>
 typedef pthread_t ntap_thread_t;
 typedef pthread_mutex_t ntap_mutex_t;
 typedef pthread_cond_t ntap_cond_t;
+static void sleep_msec(unsigned int msec)
+{
+    struct timespec ts;
+
+    ts.tv_sec = (time_t)(msec / 1000u);
+    ts.tv_nsec = (long)((msec % 1000u) * 1000000u);
+    (void)nanosleep(&ts, NULL);
+}
 #endif
 
 #define NTAP_A_MAX_ACTIVE_SESSIONS 64
@@ -90,6 +107,8 @@ typedef struct socks_stream {
     int64_t db_stream_id;
     ntap_socket_t node_fd;
     ntap_socket_t client_fd;
+    int client_fin;
+    int node_fin;
     char db_file[NTAP_CONFIG_VALUE_MAX];
 } socks_stream_t;
 
@@ -628,6 +647,22 @@ static const char *socks_close_reason_name(uint16_t reason_code)
     }
 }
 
+static void socks_stream_end_db(const char *db_file, int64_t db_stream_id,
+                                const char *reason)
+{
+    char db_err[256];
+
+    if (db_stream_id <= 0 || db_file == NULL || db_file[0] == '\0') {
+        return;
+    }
+    db_err[0] = '\0';
+    if (ntap_a_db_socks_stream_end(db_file, db_stream_id, reason,
+                                   db_err, sizeof(db_err)) != 0) {
+        (void)fprintf(stderr, "ntap-a: failed to end SOCKS stream: %s\n",
+                      db_err);
+    }
+}
+
 static uint32_t socks_stream_register(int64_t node_pk, ntap_socket_t node_fd,
                                       ntap_socket_t client_fd,
                                       const char *db_file,
@@ -665,6 +700,8 @@ static uint32_t socks_stream_register(int64_t node_pk, ntap_socket_t node_fd,
             g_socks_streams[i].node_fd = node_fd;
             g_socks_streams[i].client_fd = client_fd;
             g_socks_streams[i].db_stream_id = 0;
+            g_socks_streams[i].client_fin = 0;
+            g_socks_streams[i].node_fin = 0;
             (void)snprintf(g_socks_streams[i].db_file,
                            sizeof(g_socks_streams[i].db_file), "%s", db_file);
             break;
@@ -720,15 +757,107 @@ static void socks_stream_unregister(uint32_t stream_id, int close_client,
     if (close_client && client_fd != NTAP_INVALID_SOCKET) {
         ntap_socket_shutdown(client_fd);
     }
-    if (db_stream_id > 0 && db_file[0] != '\0') {
-        char db_err[256];
+    socks_stream_end_db(db_file, db_stream_id, reason);
+}
 
-        db_err[0] = '\0';
-        if (ntap_a_db_socks_stream_end(db_file, db_stream_id, reason,
-                                       db_err, sizeof(db_err)) != 0) {
-            (void)fprintf(stderr, "ntap-a: failed to end SOCKS stream: %s\n",
-                          db_err);
+static int socks_stream_is_active(uint32_t stream_id)
+{
+    int i = 0;
+    int active = 0;
+
+    if (stream_id == 0) {
+        return 0;
+    }
+    mutex_lock(&g_socks_mu);
+    for (i = 0; i < NTAP_A_MAX_SOCKS_STREAMS; i++) {
+        if (g_socks_streams[i].active &&
+            g_socks_streams[i].stream_id == stream_id) {
+            active = 1;
+            break;
         }
+    }
+    mutex_unlock(&g_socks_mu);
+    return active;
+}
+
+static void socks_stream_mark_client_fin(uint32_t stream_id,
+                                         const char *reason)
+{
+    int i = 0;
+    int complete = 0;
+    int64_t db_stream_id = 0;
+    char db_file[NTAP_CONFIG_VALUE_MAX];
+
+    if (stream_id == 0) {
+        return;
+    }
+    db_file[0] = '\0';
+    mutex_lock(&g_socks_mu);
+    for (i = 0; i < NTAP_A_MAX_SOCKS_STREAMS; i++) {
+        if (g_socks_streams[i].active &&
+            g_socks_streams[i].stream_id == stream_id) {
+            g_socks_streams[i].client_fin = 1;
+            complete = g_socks_streams[i].node_fin;
+            if (complete) {
+                db_stream_id = g_socks_streams[i].db_stream_id;
+                (void)snprintf(db_file, sizeof(db_file), "%s",
+                               g_socks_streams[i].db_file);
+                g_socks_streams[i].active = 0;
+            }
+            break;
+        }
+    }
+    mutex_unlock(&g_socks_mu);
+    if (complete) {
+        socks_stream_end_db(db_file, db_stream_id, reason);
+    }
+}
+
+static void socks_stream_handle_node_close(uint32_t stream_id,
+                                           ntap_socket_t node_fd,
+                                           uint16_t reason_code,
+                                           uint16_t flags)
+{
+    int i = 0;
+    ntap_socket_t client_fd = NTAP_INVALID_SOCKET;
+    int complete = 0;
+    int64_t db_stream_id = 0;
+    char db_file[NTAP_CONFIG_VALUE_MAX];
+    const char *reason = socks_close_reason_name(reason_code);
+
+    if ((flags & NTAP_SOCKS_CLOSE_FLAG_FIN) == 0) {
+        socks_stream_unregister(stream_id, 1, reason);
+        return;
+    }
+    if (stream_id == 0 || node_fd == NTAP_INVALID_SOCKET) {
+        return;
+    }
+
+    db_file[0] = '\0';
+    mutex_lock(&g_socks_mu);
+    for (i = 0; i < NTAP_A_MAX_SOCKS_STREAMS; i++) {
+        if (g_socks_streams[i].active &&
+            g_socks_streams[i].stream_id == stream_id &&
+            g_socks_streams[i].node_fd == node_fd) {
+            g_socks_streams[i].node_fin = 1;
+            client_fd = g_socks_streams[i].client_fd;
+            complete = g_socks_streams[i].client_fin;
+            if (complete) {
+                db_stream_id = g_socks_streams[i].db_stream_id;
+                (void)snprintf(db_file, sizeof(db_file), "%s",
+                               g_socks_streams[i].db_file);
+                g_socks_streams[i].active = 0;
+            }
+            break;
+        }
+    }
+    mutex_unlock(&g_socks_mu);
+
+    if (client_fd != NTAP_INVALID_SOCKET) {
+        ntap_socket_shutdown_send(client_fd);
+    }
+    if (complete) {
+        socks_stream_end_db(db_file, db_stream_id, reason);
     }
 }
 
@@ -762,19 +891,8 @@ static void socks_stream_close_node(ntap_socket_t node_fd)
     mutex_unlock(&g_socks_mu);
     for (i = 0; i < count; i++) {
         ntap_socket_shutdown(to_close[i].client_fd);
-        if (to_close[i].db_stream_id > 0 && to_close[i].db_file[0] != '\0') {
-            char db_err[256];
-
-            db_err[0] = '\0';
-            if (ntap_a_db_socks_stream_end(to_close[i].db_file,
-                                           to_close[i].db_stream_id,
-                                           "node_closed", db_err,
-                                           sizeof(db_err)) != 0) {
-                (void)fprintf(stderr,
-                              "ntap-a: failed to end SOCKS stream: %s\n",
-                              db_err);
-            }
-        }
+        socks_stream_end_db(to_close[i].db_file, to_close[i].db_stream_id,
+                            "node_closed");
     }
 }
 
@@ -1619,8 +1737,9 @@ static int handle_node(ntap_socket_t fd, const ntap_a_config_t *cfg,
                 (void)snprintf(err, err_len, "invalid SOCKS_STREAM_CLOSE");
                 break;
             }
-            socks_stream_unregister(close_msg.stream_id, 1,
-                                    socks_close_reason_name(close_msg.reason_code));
+            socks_stream_handle_node_close(close_msg.stream_id, fd,
+                                           close_msg.reason_code,
+                                           close_msg.flags);
             continue;
         }
         {
@@ -1804,12 +1923,15 @@ static void socks_client_run(socks_client_args_t *args)
     uint16_t port = 0;
     uint32_t stream_id = 0;
     int open_sent = 0;
+    int client_fin_sent = 0;
     uint8_t payload[NTAP_PAYLOAD_MAX_SOCKS];
-    uint8_t close_payload[NTAP_SOCKS_DATA_OVERHEAD];
+    uint8_t close_payload[NTAP_SOCKS_CLOSE_REASON_SIZE];
     uint8_t buf[NTAP_A_SOCKS_READ_CHUNK];
     size_t payload_len = 0;
     unsigned int idle_timeout_ms = 0;
+    uint64_t client_fin_deadline_ms = 0;
     const char *close_reason = "client_closed";
+    uint16_t close_reason_code = NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED;
 
     err[0] = '\0';
     if (socks5_authenticate(args->fd, &args->cfg, &auth, err, sizeof(err)) != 0 ||
@@ -1853,23 +1975,56 @@ static void socks_client_run(socks_client_args_t *args)
     (void)fflush(stdout);
     idle_timeout_ms = socks_idle_timeout_ms(auth.socks_idle_timeout_sec);
     for (;;) {
-        int wait_rc = ntap_socket_wait_read(args->fd, idle_timeout_ms,
-                                            err, sizeof(err));
+        int wait_rc = 0;
         int n = 0;
 
+        if (client_fin_sent) {
+            uint64_t now_ms = ntap_time_unix_msec();
+
+            if (!socks_stream_is_active(stream_id)) {
+                break;
+            }
+            if (client_fin_deadline_ms != 0 && now_ms >= client_fin_deadline_ms) {
+                close_reason = "idle_timeout";
+                close_reason_code = NTAP_SOCKS_CLOSE_REASON_IDLE_TIMEOUT;
+                break;
+            }
+            sleep_msec(100u);
+            continue;
+        }
+
+        wait_rc = ntap_socket_wait_read(args->fd, idle_timeout_ms,
+                                        err, sizeof(err));
         if (wait_rc == 1) {
             close_reason = "idle_timeout";
+            close_reason_code = NTAP_SOCKS_CLOSE_REASON_IDLE_TIMEOUT;
             break;
         }
         if (wait_rc != 0) {
             close_reason = "client_closed";
+            close_reason_code = NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED;
             break;
         }
 
         n = recv(args->fd, (char *)buf, (int)sizeof(buf), 0);
 
         if (n <= 0) {
-            break;
+            if (ntap_encode_socks_close_reason(close_payload, stream_id,
+                                               NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED,
+                                               NTAP_SOCKS_CLOSE_FLAG_FIN) != 0 ||
+                enqueue_socks_to_node(auth.node_pk, NTAP_MSG_SOCKS_STREAM_CLOSE,
+                                      close_payload, sizeof(close_payload),
+                                      NULL, err, sizeof(err)) != 0) {
+                close_reason = "client_closed";
+                close_reason_code = NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED;
+                break;
+            }
+            client_fin_sent = 1;
+            close_reason = "client_closed";
+            close_reason_code = NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED;
+            client_fin_deadline_ms = ntap_time_unix_msec() + idle_timeout_ms;
+            socks_stream_mark_client_fin(stream_id, close_reason);
+            continue;
         }
         if (ntap_encode_socks_data(payload, sizeof(payload), &payload_len,
                                    stream_id, buf, (uint32_t)n) != 0 ||
@@ -1888,13 +2043,17 @@ static void socks_client_run(socks_client_args_t *args)
 
 done:
     if (stream_id != 0) {
-        if (open_sent && ntap_encode_socks_close(close_payload, stream_id) == 0) {
+        if (open_sent && socks_stream_is_active(stream_id) &&
+            ntap_encode_socks_close_reason(close_payload, stream_id,
+                                           close_reason_code, 0) == 0) {
             (void)enqueue_socks_to_node(auth.node_pk, NTAP_MSG_SOCKS_STREAM_CLOSE,
                                         close_payload, sizeof(close_payload),
                                         NULL, err, sizeof(err));
         }
-        socks_stream_unregister(stream_id, 0,
-                                open_sent ? close_reason : "open_failed");
+        if (socks_stream_is_active(stream_id)) {
+            socks_stream_unregister(stream_id, 0,
+                                    open_sent ? close_reason : "open_failed");
+        }
     }
     ntap_socket_close(args->fd);
     free(args);

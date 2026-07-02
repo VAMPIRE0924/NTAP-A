@@ -19,6 +19,7 @@ int ntap_net_init(char *err, size_t err_len);
 void ntap_net_cleanup(void);
 void ntap_socket_close(ntap_socket_t fd);
 void ntap_socket_shutdown(ntap_socket_t fd);
+void ntap_socket_shutdown_send(ntap_socket_t fd);
 int ntap_socket_set_send_timeout(ntap_socket_t fd, unsigned int timeout_ms,
                                  char *err, size_t err_len);
 int ntap_socket_set_nonblocking(ntap_socket_t fd, int nonblocking,
