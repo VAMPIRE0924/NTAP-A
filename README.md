@@ -1,6 +1,6 @@
 # NTAP-A
 
-public control server, SQLite runtime config, AUTH_NODE/AUTH_TAP, TapHub relay, and direct probe API.
+public control server, SQLite runtime config, AUTH_NODE/AUTH_TAP, TapHub relay, direct probe API, and direct strategy API.
 
 This repository is exported from the NTAP integration workspace. Keep git
 history source-only: do not commit build output, runtime databases, logs, or

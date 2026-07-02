@@ -160,6 +160,10 @@ int ntap_a_db_set_node_direct_reachable(const char *db_file, int64_t id,
 int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
                                  int64_t tap_user_id, uint32_t ttl_sec,
                                  char **out_json, char *err, size_t err_len);
+int ntap_a_db_issue_direct_strategy(const char *db_file, int64_t node_pk,
+                                    int64_t tap_user_id, const char *direct_addr,
+                                    uint32_t ttl_sec, char **out_json,
+                                    char *err, size_t err_len);
 int ntap_a_db_session_start(const char *db_file,
                             const ntap_a_session_start_t *session,
                             int64_t *out_session_id, char *err, size_t err_len);

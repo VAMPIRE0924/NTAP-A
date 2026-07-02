@@ -27,7 +27,8 @@ node-level socks_idle_timeout_sec enforcement
 node direct_port management and CONFIG_PUSH delivery
 direct-token issue API for granted TAP users
 direct probe API that updates node direct_reachable status
+direct strategy API that returns direct_first or relay startup packages
 ```
 
-Direct strategy delivery, SOCKS half-close hardening, Web management UI, and
-OpenWrt packaging remain later-phase work.
+Direct strategy auto-distribution, SOCKS half-close hardening, Web management
+UI, and OpenWrt packaging remain later-phase work.

@@ -1115,6 +1115,25 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
                        (long long)id, reachable, timeout_ms);
         return api_strdup_response(response, out_json, err, err_len);
     }
+    if (strcmp(req->path, "/api/direct/strategy") == 0) {
+        int64_t node_pk = 0;
+        int64_t tap_user_id = 0;
+        uint32_t ttl_sec = 60u;
+        char addr[NTAP_CONFIG_VALUE_MAX];
+
+        if (api_form_required_node_pk(req, &node_pk, err, err_len) != 0 ||
+            api_form_required_i64(req, "tap_user_id", &tap_user_id,
+                                  err, err_len) != 0 ||
+            api_form_required(req, "addr", addr, sizeof(addr), err, err_len) != 0 ||
+            api_parse_optional_u32(req, "ttl_sec", 60u, &ttl_sec) != 0 ||
+            ttl_sec == 0) {
+            (void)snprintf(err, err_len, "invalid direct strategy request");
+            return -1;
+        }
+        return ntap_a_db_issue_direct_strategy(cfg->db_file, node_pk, tap_user_id,
+                                               addr, ttl_sec, out_json,
+                                               err, err_len);
+    }
     if (strcmp(req->path, "/api/direct-token/issue") == 0) {
         int64_t node_pk = 0;
         int64_t tap_user_id = 0;
