@@ -29,7 +29,7 @@ direct-token issue API for granted TAP users
 direct probe API that updates node direct_reachable status
 direct strategy API that returns direct_first or relay startup packages
 automatic CONFIG_PUSH direct_first strategy distribution for TAP clients
+built-in GET / Web management page that signs existing /api/* calls in browser
 ```
 
-SOCKS half-close hardening, Web management UI, and OpenWrt packaging remain
-later-phase work.
+OpenWrt packaging and Windows TAP remain later-phase work.

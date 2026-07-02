@@ -1,6 +1,7 @@
 #include "a/api_server.h"
 
 #include "a/db_sqlite.h"
+#include "a/web_assets.h"
 #include "common/hash.h"
 #include "common/net.h"
 #include "common/ntap_time.h"
@@ -383,18 +384,24 @@ static int api_nonce_record(const char *nonce, int64_t now,
     return 0;
 }
 
-static int api_send_response(ntap_socket_t fd, int status_code, const char *status_text,
-                             const char *body, char *err, size_t err_len)
+static int api_send_response_type(ntap_socket_t fd, int status_code,
+                                  const char *status_text,
+                                  const char *content_type,
+                                  const char *body,
+                                  char *err, size_t err_len)
 {
     char header[512];
     size_t body_len = body == NULL ? 0u : strlen(body);
     int header_len = snprintf(header, sizeof(header),
                               "HTTP/1.1 %d %s\r\n"
-                              "Content-Type: application/json\r\n"
+                              "Content-Type: %s\r\n"
                               "Content-Length: %zu\r\n"
                               "Connection: close\r\n"
                               "\r\n",
-                              status_code, status_text, body_len);
+                              status_code, status_text,
+                              content_type == NULL ? "application/octet-stream" :
+                              content_type,
+                              body_len);
 
     if (header_len < 0 || (size_t)header_len >= sizeof(header)) {
         (void)snprintf(err, err_len, "api response header too large");
@@ -407,6 +414,60 @@ static int api_send_response(ntap_socket_t fd, int status_code, const char *stat
         return -1;
     }
     return 0;
+}
+
+static int api_send_response_parts(ntap_socket_t fd, int status_code,
+                                   const char *status_text,
+                                   const char *content_type,
+                                   const char *const *parts,
+                                   size_t part_count,
+                                   char *err, size_t err_len)
+{
+    char header[512];
+    size_t body_len = 0;
+    size_t i = 0;
+    int header_len = 0;
+
+    if (parts == NULL && part_count > 0) {
+        return -1;
+    }
+    for (i = 0; i < part_count; i++) {
+        body_len += parts[i] == NULL ? 0u : strlen(parts[i]);
+    }
+    header_len = snprintf(header, sizeof(header),
+                          "HTTP/1.1 %d %s\r\n"
+                          "Content-Type: %s\r\n"
+                          "Content-Length: %zu\r\n"
+                          "Connection: close\r\n"
+                          "\r\n",
+                          status_code, status_text,
+                          content_type == NULL ? "application/octet-stream" :
+                          content_type,
+                          body_len);
+    if (header_len < 0 || (size_t)header_len >= sizeof(header)) {
+        (void)snprintf(err, err_len, "api response header too large");
+        return -1;
+    }
+    if (ntap_send_all(fd, header, (size_t)header_len, err, err_len) != 0) {
+        return -1;
+    }
+    for (i = 0; i < part_count; i++) {
+        size_t part_len = parts[i] == NULL ? 0u : strlen(parts[i]);
+
+        if (part_len > 0 &&
+            ntap_send_all(fd, parts[i], part_len, err, err_len) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int api_send_response(ntap_socket_t fd, int status_code,
+                             const char *status_text, const char *body,
+                             char *err, size_t err_len)
+{
+    return api_send_response_type(fd, status_code, status_text,
+                                  "application/json", body, err, err_len);
 }
 
 static int api_error(ntap_socket_t fd, int status_code, const char *status_text,
@@ -1234,6 +1295,27 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
     return 1;
 }
 
+static int api_handle_web_endpoint(ntap_socket_t fd, const api_request_t *req,
+                                   char *err, size_t err_len)
+{
+    if (req == NULL) {
+        return -1;
+    }
+    if (strcmp(req->path, "/") == 0 ||
+        strcmp(req->path, "/index.html") == 0) {
+        return api_send_response_parts(fd, 200, "OK",
+                                       "text/html; charset=utf-8",
+                                       NTAP_A_WEB_INDEX_PARTS,
+                                       NTAP_A_WEB_INDEX_PART_COUNT,
+                                       err, err_len);
+    }
+    if (strcmp(req->path, "/favicon.ico") == 0) {
+        return api_send_response_type(fd, 204, "No Content",
+                                      "text/plain", "", err, err_len);
+    }
+    return api_error(fd, 404, "Not Found", "not found", err, err_len);
+}
+
 static int api_handle_client(ntap_socket_t fd, const ntap_a_config_t *cfg,
                              char *err, size_t err_len)
 {
@@ -1244,6 +1326,11 @@ static int api_handle_client(ntap_socket_t fd, const ntap_a_config_t *cfg,
     if (api_read_request(fd, &req, err, err_len) != 0) {
         (void)api_error(fd, 400, "Bad Request", err, err, err_len);
         return -1;
+    }
+    if (strcmp(req.method, "GET") == 0) {
+        rc = api_handle_web_endpoint(fd, &req, err, err_len);
+        free(req.body);
+        return rc;
     }
     if (strcmp(req.method, "POST") != 0) {
         (void)api_error(fd, 405, "Method Not Allowed", "method not allowed",
