@@ -602,6 +602,24 @@ static unsigned int socks_idle_timeout_ms(uint32_t idle_timeout_sec)
     return (unsigned int)(effective * 1000u);
 }
 
+static const char *socks_close_reason_name(uint16_t reason_code)
+{
+    switch (reason_code) {
+    case NTAP_SOCKS_CLOSE_REASON_TARGET_CONNECT_FAILED:
+        return "target_connect_failed";
+    case NTAP_SOCKS_CLOSE_REASON_RESOURCE_LIMITED:
+        return "resource_limited";
+    case NTAP_SOCKS_CLOSE_REASON_IDLE_TIMEOUT:
+        return "idle_timeout";
+    case NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED:
+        return "client_closed";
+    case NTAP_SOCKS_CLOSE_REASON_CLOSED:
+    case NTAP_SOCKS_CLOSE_REASON_REMOTE_CLOSED:
+    default:
+        return "remote_closed";
+    }
+}
+
 static uint32_t socks_stream_register(int64_t node_pk, ntap_socket_t node_fd,
                                       ntap_socket_t client_fd,
                                       const char *db_file,
@@ -1591,7 +1609,8 @@ static int handle_node(ntap_socket_t fd, const ntap_a_config_t *cfg,
                 (void)snprintf(err, err_len, "invalid SOCKS_STREAM_CLOSE");
                 break;
             }
-            socks_stream_unregister(close_msg.stream_id, 1, "remote_closed");
+            socks_stream_unregister(close_msg.stream_id, 1,
+                                    socks_close_reason_name(close_msg.reason_code));
             continue;
         }
         {

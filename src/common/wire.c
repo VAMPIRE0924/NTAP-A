@@ -478,13 +478,36 @@ int ntap_encode_socks_close(uint8_t out[NTAP_SOCKS_DATA_OVERHEAD],
     return 0;
 }
 
+int ntap_encode_socks_close_reason(uint8_t out[NTAP_SOCKS_CLOSE_REASON_SIZE],
+                                   uint32_t stream_id, uint16_t reason_code,
+                                   uint16_t flags)
+{
+    if (out == NULL || stream_id == 0) {
+        return -1;
+    }
+    put_be32(out, stream_id);
+    put_be16(out + 4u, reason_code);
+    put_be16(out + 6u, flags);
+    return 0;
+}
+
 int ntap_decode_socks_close(ntap_socks_close_t *out, const uint8_t *payload,
                             size_t len)
 {
-    if (out == NULL || payload == NULL || len != NTAP_SOCKS_DATA_OVERHEAD) {
+    if (out == NULL || payload == NULL ||
+        (len != NTAP_SOCKS_CLOSE_BASE_SIZE &&
+         len != NTAP_SOCKS_CLOSE_REASON_SIZE)) {
         return -1;
     }
+    (void)memset(out, 0, sizeof(*out));
     out->stream_id = get_be32(payload);
+    if (len == NTAP_SOCKS_CLOSE_REASON_SIZE) {
+        out->reason_code = get_be16(payload + 4u);
+        out->flags = get_be16(payload + 6u);
+    } else {
+        out->reason_code = NTAP_SOCKS_CLOSE_REASON_REMOTE_CLOSED;
+        out->flags = 0;
+    }
     return out->stream_id == 0 ? -1 : 0;
 }
 

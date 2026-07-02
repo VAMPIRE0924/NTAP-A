@@ -15,6 +15,17 @@
 #define NTAP_BRIDGE_NAME_MAX 64u
 #define NTAP_SOCKS_HOST_MAX 256u
 #define NTAP_SOCKS_DATA_OVERHEAD 4u
+#define NTAP_SOCKS_CLOSE_BASE_SIZE 4u
+#define NTAP_SOCKS_CLOSE_REASON_SIZE 8u
+
+enum {
+    NTAP_SOCKS_CLOSE_REASON_CLOSED = 0,
+    NTAP_SOCKS_CLOSE_REASON_CLIENT_CLOSED = 1,
+    NTAP_SOCKS_CLOSE_REASON_REMOTE_CLOSED = 2,
+    NTAP_SOCKS_CLOSE_REASON_TARGET_CONNECT_FAILED = 3,
+    NTAP_SOCKS_CLOSE_REASON_RESOURCE_LIMITED = 4,
+    NTAP_SOCKS_CLOSE_REASON_IDLE_TIMEOUT = 5
+};
 
 typedef struct ntap_hello {
     uint8_t role;
@@ -76,6 +87,8 @@ typedef struct ntap_socks_data {
 
 typedef struct ntap_socks_close {
     uint32_t stream_id;
+    uint16_t reason_code;
+    uint16_t flags;
 } ntap_socks_close_t;
 
 int ntap_random_nonce(uint8_t nonce[NTAP_NONCE_SIZE]);
@@ -118,6 +131,9 @@ int ntap_encode_socks_data(uint8_t *out, size_t cap, size_t *len,
 int ntap_decode_socks_data(ntap_socks_data_t *out, const uint8_t *payload, size_t len);
 int ntap_encode_socks_close(uint8_t out[NTAP_SOCKS_DATA_OVERHEAD],
                             uint32_t stream_id);
+int ntap_encode_socks_close_reason(uint8_t out[NTAP_SOCKS_CLOSE_REASON_SIZE],
+                                   uint32_t stream_id, uint16_t reason_code,
+                                   uint16_t flags);
 int ntap_decode_socks_close(ntap_socks_close_t *out, const uint8_t *payload,
                             size_t len);
 
