@@ -21,6 +21,7 @@ _release/
 *.tgz
 *.7z
 *.ipk
+*.apk
 .vscode/
 .idea/
 *.swp
