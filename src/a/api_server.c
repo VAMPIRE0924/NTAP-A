@@ -1083,6 +1083,22 @@ static int api_handle_json_endpoint(const ntap_a_config_t *cfg, const api_reques
         return ntap_a_db_json_node_service_status(cfg->db_file, id, out_json,
                                                   err, err_len);
     }
+    if (strcmp(req->path, "/api/direct-token/issue") == 0) {
+        int64_t node_pk = 0;
+        int64_t tap_user_id = 0;
+        uint32_t ttl_sec = 60u;
+
+        if (api_form_required_node_pk(req, &node_pk, err, err_len) != 0 ||
+            api_form_required_i64(req, "tap_user_id", &tap_user_id,
+                                  err, err_len) != 0 ||
+            api_parse_optional_u32(req, "ttl_sec", 60u, &ttl_sec) != 0 ||
+            ttl_sec == 0) {
+            (void)snprintf(err, err_len, "invalid direct token request");
+            return -1;
+        }
+        return ntap_a_db_issue_direct_token(cfg->db_file, node_pk, tap_user_id,
+                                            ttl_sec, out_json, err, err_len);
+    }
     if (strcmp(req->path, "/api/network/get") == 0) {
         int64_t id = 0;
 

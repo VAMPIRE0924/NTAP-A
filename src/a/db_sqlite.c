@@ -1,5 +1,6 @@
 #include "a/db_sqlite.h"
 
+#include "common/direct_token.h"
 #include "common/hash.h"
 #include "common/ntap_time.h"
 #include "common/proto.h"
@@ -1984,6 +1985,130 @@ int ntap_a_db_set_node_service_enabled(const char *db_file, int64_t id,
     return db_update_enabled_by_id(
         db_file, sql, id, enabled, "prepare node service update failed",
         "update node service failed", "node not found", err, err_len);
+}
+
+int ntap_a_db_issue_direct_token(const char *db_file, int64_t node_pk,
+                                 int64_t tap_user_id, uint32_t ttl_sec,
+                                 char **out_json, char *err, size_t err_len)
+{
+    sqlite3 *db = NULL;
+    sqlite3_stmt *stmt = NULL;
+    json_buf_t json;
+    char token[NTAP_DIRECT_TOKEN_MAX];
+    char nonce[NTAP_DIRECT_TOKEN_NONCE_HEX_SIZE];
+    const unsigned char *node_id_text = NULL;
+    const unsigned char *node_key_text = NULL;
+    int64_t network_id = 0;
+    int direct_enabled = 0;
+    int direct_port = 0;
+    int node_enabled = 0;
+    int network_enabled = 0;
+    int tap_user_enabled = 0;
+    int grant_enabled = 0;
+    uint64_t now = ntap_time_unix_sec();
+    uint64_t expire_at = 0;
+    int rc = 0;
+
+    if (out_json == NULL) {
+        return -1;
+    }
+    *out_json = NULL;
+    if (node_pk <= 0 || tap_user_id <= 0) {
+        if (err != NULL && err_len > 0) {
+            (void)snprintf(err, err_len, "invalid direct token ids");
+        }
+        return -1;
+    }
+    if (ttl_sec == 0) {
+        ttl_sec = 60u;
+    }
+    if (ttl_sec > 600u) {
+        ttl_sec = 600u;
+    }
+    if (db_open(db_file, &db, err, err_len) != 0) {
+        return -1;
+    }
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT n.node_id, n.node_key_secret, n.network_id,"
+        " n.direct_enabled, n.direct_port, n.enabled, net.enabled,"
+        " u.enabled, g.enabled"
+        " FROM nodes n"
+        " JOIN networks net ON net.id = n.network_id"
+        " JOIN tap_users u ON u.id = ?"
+        " JOIN tap_grants g ON g.tap_user_id = u.id"
+        "  AND g.network_id = n.network_id"
+        " WHERE n.id = ?;",
+        -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        db_set_err(err, err_len, "prepare direct token lookup failed", db);
+        sqlite3_close(db);
+        return -1;
+    }
+    (void)sqlite3_bind_int64(stmt, 1, (sqlite3_int64)tap_user_id);
+    (void)sqlite3_bind_int64(stmt, 2, (sqlite3_int64)node_pk);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_ROW) {
+        if (rc == SQLITE_DONE) {
+            (void)snprintf(err, err_len, "node/tap grant not found");
+        } else {
+            db_set_err(err, err_len, "read direct token lookup failed", db);
+        }
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    node_id_text = sqlite3_column_text(stmt, 0);
+    node_key_text = sqlite3_column_text(stmt, 1);
+    network_id = sqlite3_column_int64(stmt, 2);
+    direct_enabled = sqlite3_column_int(stmt, 3);
+    direct_port = sqlite3_column_int(stmt, 4);
+    node_enabled = sqlite3_column_int(stmt, 5);
+    network_enabled = sqlite3_column_int(stmt, 6);
+    tap_user_enabled = sqlite3_column_int(stmt, 7);
+    grant_enabled = sqlite3_column_int(stmt, 8);
+    if (node_id_text == NULL || node_key_text == NULL || network_id <= 0 ||
+        !direct_enabled || direct_port <= 0 || !node_enabled ||
+        !network_enabled || !tap_user_enabled || !grant_enabled) {
+        (void)snprintf(err, err_len, "direct token not allowed");
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    expire_at = now + ttl_sec;
+    if (ntap_direct_token_random_nonce(nonce) != 0 ||
+        ntap_direct_token_make(token, sizeof(token),
+                               (const char *)node_key_text,
+                               tap_user_id, (const char *)node_id_text,
+                               network_id, expire_at, nonce) != 0) {
+        (void)snprintf(err, err_len, "failed to issue direct token");
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+    (void)memset(&json, 0, sizeof(json));
+    if (json_appendf(&json,
+                     "{\"code\":1,\"data\":{\"token\":") != 0 ||
+        json_append_string(&json, (const unsigned char *)token) != 0 ||
+        json_appendf(&json,
+                     ",\"expire_at\":%lld,\"ttl_sec\":%u,"
+                     "\"node_id\":",
+                     (long long)expire_at, ttl_sec) != 0 ||
+        json_append_string(&json, node_id_text) != 0 ||
+        json_appendf(&json,
+                     ",\"network_id\":%lld,\"tap_user_id\":%lld,"
+                     "\"direct_port\":%d}}",
+                     (long long)network_id, (long long)tap_user_id,
+                     direct_port) != 0) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        free(json.data);
+        return -1;
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    *out_json = json.data;
+    return 0;
 }
 
 int ntap_a_db_session_start(const char *db_file,

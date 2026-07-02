@@ -48,6 +48,7 @@ COMPONENT_LIBS := $(OPENSSL_LIBS) $(SQLITE_LIBS)
 COMMON_SRCS := \
 	src/common/buffer.c \
 	src/common/config.c \
+	src/common/direct_token.c \
 	src/common/hash.c \
 	src/common/log.c \
 	src/common/net.c \

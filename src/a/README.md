@@ -25,7 +25,8 @@ SOCKS stream list/get API exposure for Web management
 per-node max_socks_streams enforcement
 node-level socks_idle_timeout_sec enforcement
 node direct_port management and CONFIG_PUSH delivery
+direct-token issue API for granted TAP users
 ```
 
-Direct token/data relay, SOCKS half-close hardening, Web management UI, and
+Direct B-C data relay, SOCKS half-close hardening, Web management UI, and
 OpenWrt packaging remain later-phase work.
