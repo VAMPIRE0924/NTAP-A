@@ -1,75 +1,53 @@
-# NTAP-A
+﻿# NTAP-A
 
-NTAP-A 是 NTAP 的公网控制端和中继端。它负责节点注册、TAP 用户鉴权、运行配置下发、TAP 二层帧中继、Direct 策略接口，以及后续 Web/API 管理入口。
+NTAP-A 鏄?NTAP 鐨勫叕缃戞帶鍒剁鍜屼腑缁х銆傚畠璐熻矗鑺傜偣娉ㄥ唽銆乀AP 鐢ㄦ埛閴存潈銆佽繍琛岄厤缃笅鍙戙€乀AP 浜屽眰甯т腑缁с€丏irect 绛栫暐鎺ュ彛锛屼互鍙?Web/API 绠＄悊鍏ュ彛銆?
+## 涓変釜浠撳簱
 
-NTAP 分为三个仓库：
-
-- `NTAP-A`: 公网服务器，管理 API、SQLite 状态库、节点/TAP 鉴权、TapHub 中继。
-- `NTAP-B`: OpenWrt/Linux 网关节点，连接 A，创建 TAP，并按 A 下发的配置挂接本地网桥。
-- `NTAP-C`: 远端客户机客户端，Windows 端提供图形界面，Linux 端提供命令行客户端。
-
-## 下载和部署
-
-正式部署请下载 GitHub Release 里的编译产物，不要直接拿源码目录里的临时构建文件部署。
-
-最新版本：
+NTAP 鎷嗘垚涓変釜骞插噣鐨勬簮鐮佷粨搴擄紝鏈€缁堝彲閮ㄧ讲鏂囦欢缁熶竴鏀惧湪鍚勮嚜 GitHub Release锛?
+- [NTAP-A](https://github.com/VAMPIRE0924/NTAP-A): 鍏綉鏈嶅姟绔紝璐熻矗绠＄悊 API銆丼QLite 鐘舵€佸簱銆佽妭鐐?TAP 閴存潈銆乀apHub 涓户銆?- [NTAP-B](https://github.com/VAMPIRE0924/NTAP-B): 鑺傜偣绔紝閮ㄧ讲鍦ㄥ鎴蜂晶缃戝叧鎴栧唴缃戜富鏈猴紝杩炴帴 A 骞舵帴鍏ユ湰鍦扮綉缁溿€?- [NTAP-C](https://github.com/VAMPIRE0924/NTAP-C): 瀹㈡埛绔紝Windows 绔彁渚涘浘褰㈢晫闈紝Linux 绔彁渚涘懡浠よ鍏ュ彛銆?
+## 涓嬭浇鍜岄儴缃?
+姝ｅ紡閮ㄧ讲璇蜂笅杞?GitHub Release 閲岀殑鏈€缁堝彂甯冨寘锛屼笉瑕佺洿鎺ユ嬁婧愮爜鐩綍閲岀殑涓存椂鏂囦欢閮ㄧ讲銆?
+鏈€鏂扮増鏈細
 
 https://github.com/VAMPIRE0924/NTAP-A/releases/latest
 
-Linux 服务器优先使用：
+Linux 鏈嶅姟鍣ㄤ紭鍏堜娇鐢細
 
 ```text
 NTAP-A-<version>-linux-x64.tar.gz
 ```
 
-基本流程：
-
+鍩烘湰娴佺▼锛?
 ```sh
 tar -xzf NTAP-A-<version>-linux-x64.tar.gz
 cd NTAP-A-<version>-linux-x64
 cp conf/ntap-a.conf.example conf/ntap-a.conf
 ```
 
-首次运行前请修改配置里的 API key、监听地址、SQLite 数据库路径等参数。
-
-常用命令：
-
+棣栨杩愯鍓嶈淇敼閰嶇疆閲岀殑 API key銆佺洃鍚湴鍧€銆丼QLite 鏁版嵁搴撹矾寰勭瓑鍙傛暟銆?
+甯哥敤鍛戒护锛?
 ```sh
 bin/ntap-a -c conf/ntap-a.conf initdb
 bin/ntap-a -c conf/ntap-a.conf serve
 bin/ntap-a -c conf/ntap-a.conf api
 ```
 
-Release 包内带有 systemd 安装脚本，可用于固定目录部署：
-
+Release 鍖呭唴甯︽湁鏈嶅姟瀹夎鑴氭湰锛屽彲鐢ㄤ簬鍥哄畾鐩綍閮ㄧ讲锛?
 ```sh
 sudo sh install/install-linux-service.sh
 sudo sh install/install-linux-service.sh --enable --start
 ```
 
-## 源码构建
-
-源码仓库只保存 NTAP-A 自身代码和共享协议代码。编译需要 C11 编译器、OpenSSL，NTAP-A 还需要 SQLite。
-
-```sh
-make
-make config-test
-```
-
-Windows/MSYS2 构建主要用于开发验证；生产部署建议使用 Linux Release 包。
-
-## 目录
+## 婧愮爜鑼冨洿
 
 ```text
-src/a/       NTAP-A 服务端源码
-src/common/  三端共享协议、日志、网络、时间、buffer 等公共代码
-conf/        最小配置示例
-Makefile     单仓库构建入口
-```
+src/a/       NTAP-A 鏈嶅姟绔簮鐮?src/common/  涓夌鍏变韩鍗忚銆佹棩蹇椼€佺綉缁溿€佹椂闂淬€乥uffer 绛夊叕鍏变唬鐮?conf/        鏈€灏忛厤缃ず渚?```
 
-## 安全注意
+婧愮爜浠撳簱鍙繚瀛樻簮鐮併€侀厤缃牱渚嬨€丷EADME 鍜?LICENSE锛涙渶缁堝彂甯冨寘鍙斁鍦?GitHub Release銆?
+## 瀹夊叏娉ㄦ剰
 
-- 对公网暴露 API 前必须修改默认 API key。
-- SQLite 数据库和日志路径应放在持久化目录。
-- API/Web、TAP 中继、节点连接应按部署环境拆分监听地址和防火墙策略。
-- Release 包和源码提交是两条线：源码仓库保持干净，编译产物只放 GitHub Release。
+- 瀵瑰叕缃戞毚闇?API 鍓嶅繀椤讳慨鏀归粯璁?API key銆?- SQLite 鏁版嵁搴撳拰鏃ュ織璺緞搴旀斁鍦ㄦ寔涔呭寲鐩綍銆?- API/Web銆乀AP 涓户銆佽妭鐐硅繛鎺ュ簲鎸夐儴缃茬幆澧冩媶鍒嗙洃鍚湴鍧€鍜岄槻鐏绛栫暐銆?
+## License
+
+GPL-3.0-only. See `LICENSE`.
+
