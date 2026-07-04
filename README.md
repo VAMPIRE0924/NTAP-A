@@ -1,4 +1,4 @@
-# NTAP-A
+# NTAP-A 
 
 NTAP-A is the public control and relay server for NTAP. It handles node registration, TAP user authentication, runtime configuration delivery, TAP frame relay, Direct strategy APIs, and the management API/Web entry point.
 
